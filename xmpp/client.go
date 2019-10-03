@@ -219,7 +219,6 @@ func (c *XmppClient) handlePresence(e xmlstream.Element) {
 				}
 				c.server.Rooms = append(c.server.Rooms, joinedRoom)
 			}
-			c.server.Unlock()
 			for _, member := range joinedRoom.Members {
 				str := "<presence from='%v' to='%v'>" +
 					"<x xmlns='http://jabber.org/protocol/muc#user'>" +
@@ -240,6 +239,7 @@ func (c *XmppClient) handlePresence(e xmlstream.Element) {
 					"<item affiliation='member' role='participant'/></x></presence>"
 				member.write(fmt.Sprintf(str, XMLEscape(to), XMLEscape(member.JID)))
 			}
+			c.server.Unlock()
 		}
 		if typ == "unavailable" {
 			c.logger.Println("Handling presence as groupchat 1.0 leave")
