@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"runtime/debug"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -59,6 +60,9 @@ func (c *XmppClient) Close() {
 
 func (c *XmppClient) HandleConnection() {
 	defer func() {
+		if r := recover(); r != nil {
+			c.logger.Printf("Panic handling connection: %v\n%v", r, string(debug.Stack()))
+		}
 		c.server.RemoveClient(c)
 		c.closeConn()
 		c.logger.Println("Connection closed")
