@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"encoding/xml"
 	"fmt"
-	"log"
 	"net"
 	"runtime/debug"
 	"strings"
@@ -17,6 +16,7 @@ import (
 
 	"github.com/redbluescreen/sbrwxmpp/chatlog"
 	"github.com/redbluescreen/sbrwxmpp/cmdhook"
+	"github.com/redbluescreen/sbrwxmpp/log"
 	"github.com/redbluescreen/sbrwxmpp/tls"
 	xmlstream "github.com/redbluescreen/sbrwxmpp/xmlstream2"
 )
@@ -132,8 +132,8 @@ func (c *XmppClient) handleXmlElement(e xmlstream.Element) error {
 			c.handleMessage(e)
 		}
 	default:
-		c.logger.Println("received unknown xml element")
-		c.logger.Printf("%#v\n", e)
+		c.logger.Debug("received unknown xml element")
+		c.logger.Debugf("%#v\n", e)
 	}
 	return nil
 }
@@ -148,7 +148,7 @@ func (c *XmppClient) handleIq(e xmlstream.Element) {
 	}
 	for _, el := range e.Children {
 		if el.Name.Local == "query" && el.Name.Space == "jabber:iq:auth" {
-			c.logger.Println("Received authentication IQ")
+			c.logger.Debug("Received authentication IQ")
 			if typ == "get" {
 				s := "<iq type='result' id='%v'><query xmlns='jabber:iq:auth'><username/><password/><resource/></query></iq>"
 				c.write(fmt.Sprintf(s, id))
@@ -173,7 +173,7 @@ func (c *XmppClient) handleIq(e xmlstream.Element) {
 					continue
 				}
 				c.JID = uc.Text + "@" + c.server.Config.Domain + "/" + rc.Text
-				c.logger.Printf("JID set to %v", c.JID)
+				c.logger.Debugf("JID set to %v", c.JID)
 				c.server.Lock()
 				for _, cl := range c.server.Clients {
 					// Intentionally BareJidMatch, we don't support multiple
@@ -189,7 +189,7 @@ func (c *XmppClient) handleIq(e xmlstream.Element) {
 				c.authenticated = true
 			}
 		} else {
-			c.logger.Println("Received unknown IQ")
+			c.logger.Debug("Received unknown IQ")
 			s := "<iq type='error' id='%v' from='%v'><error type='cancel'><service-unavailable xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/></error></iq>"
 			c.write(fmt.Sprintf(s, id, c.server.Config.Domain))
 		}
@@ -202,13 +202,13 @@ func (c *XmppClient) handlePresence(e xmlstream.Element) {
 	if to != "" {
 		toBare := strings.Split(to, "/")[0]
 		if typ == "" {
-			c.logger.Println("Handling presence as groupchat 1.0 join")
+			c.logger.Debug("Handling presence as groupchat 1.0 join")
 			c.server.Lock()
 			var joinedRoom *XmppRoom
 			wasAdded := false
 			for _, room := range c.server.Rooms {
 				if strings.EqualFold(room.JID, toBare) {
-					c.logger.Println("Added client to room " + toBare)
+					c.logger.Debug("Added client to room " + toBare)
 					room.AddMember(c)
 					joinedRoom = room
 					wasAdded = true
@@ -216,7 +216,7 @@ func (c *XmppClient) handlePresence(e xmlstream.Element) {
 				}
 			}
 			if !wasAdded {
-				c.logger.Println("Created room " + toBare)
+				c.logger.Debug("Created room " + toBare)
 				joinedRoom = &XmppRoom{
 					JID:     toBare,
 					Members: []*XmppClient{c},
@@ -246,25 +246,25 @@ func (c *XmppClient) handlePresence(e xmlstream.Element) {
 			c.server.Unlock()
 		}
 		if typ == "unavailable" {
-			c.logger.Println("Handling presence as groupchat 1.0 leave")
+			c.logger.Debug("Handling presence as groupchat 1.0 leave")
 			c.server.Lock()
 			for _, room := range c.server.Rooms {
 				if room.JID == toBare {
 					room.RemoveMember(c)
-					c.logger.Println("Removed client from room " + toBare)
+					c.logger.Debug("Removed client from room ", toBare)
 					break
 				}
 			}
 			c.server.Unlock()
 		}
 	} else {
-		c.logger.Println("Adding client to available clients")
+		c.logger.Debug("Adding client to available clients")
 		c.server.AddClient(c)
 	}
 }
 
 func (c *XmppClient) handleMessage(e xmlstream.Element) {
-	c.logger.Printf("Handling message: %#v\n", e)
+	c.logger.Debugf("Handling message: %#v\n", e)
 	body, ok := e.GetChild("body")
 	if ok {
 		chatlog.ProcessMessage(body.Text)
@@ -277,11 +277,18 @@ func (c *XmppClient) handleMessage(e xmlstream.Element) {
 }
 
 func (c *XmppClient) write(str string) {
-	c.logger.Printf("SEND: %v\n", str)
+	c.logger.Debugf("SEND: %v\n", str)
+	var err error
 	if c.tlsConn != nil {
-		c.tlsConn.Write([]byte(str))
+		_ = c.tlsConn.SetWriteDeadline(time.Now().Add(1 * time.Second))
+		_, err = c.tlsConn.Write([]byte(str))
 	} else {
-		c.tcpConn.Write([]byte(str))
+		_ = c.tcpConn.SetWriteDeadline(time.Now().Add(1 * time.Second))
+		_, err = c.tcpConn.Write([]byte(str))
+	}
+	if err != nil {
+		c.logger.Printf("failed to write: %v\n", err)
+		c.closeConn()
 	}
 }
 

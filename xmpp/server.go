@@ -6,10 +6,8 @@ package xmpp
 
 import (
 	"fmt"
-	"log"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +15,7 @@ import (
 	"github.com/redbluescreen/sbrwxmpp/cmdhook"
 	"github.com/redbluescreen/sbrwxmpp/config"
 	"github.com/redbluescreen/sbrwxmpp/db"
+	"github.com/redbluescreen/sbrwxmpp/log"
 	"github.com/redbluescreen/sbrwxmpp/tls"
 	xmlstream "github.com/redbluescreen/sbrwxmpp/xmlstream2"
 )
@@ -82,7 +81,7 @@ func (s *XmppServer) Run(ln net.Listener, tlsConfig *tls.Config) {
 		if err != nil {
 			panic(err)
 		}
-		clogger := log.New(os.Stderr, "[unknown] ", log.LstdFlags)
+		clogger := log.New("[unknown] ", s.Config.Verbose)
 		clogger.Println("Accepted TCP connection")
 
 		cl := &XmppClient{
@@ -101,13 +100,13 @@ func (s *XmppServer) Run(ln net.Listener, tlsConfig *tls.Config) {
 }
 
 func (s *XmppServer) RouteMessage(msg xmlstream.Element) {
-	s.Logger.Println("Routing message")
+	s.Logger.Debug("Routing message")
 	to := msg.GetAttr("to")
 	if msg.GetAttr("type") == "groupchat" {
 		s.Lock()
 		for _, room := range s.Rooms {
 			if strings.EqualFold(room.JID, to) {
-				s.Logger.Println("Routing to room " + to)
+				s.Logger.Debug("Routing to room " + to)
 				room.RouteMessage(msg)
 				break
 			}
@@ -117,7 +116,7 @@ func (s *XmppServer) RouteMessage(msg xmlstream.Element) {
 	s.Lock()
 	for _, client := range s.Clients {
 		if jidMatches(to, client.JID) {
-			s.Logger.Println("Routing to " + to)
+			s.Logger.Debug("Routing to " + to)
 			client.SendXML(msg)
 			break
 		}

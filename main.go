@@ -6,10 +6,11 @@ package main
 
 import (
 	"io/ioutil"
-	"log"
+	stdlog "log"
 	"net"
 	"os"
 	"path"
+	"runtime"
 	"strings"
 
 	bolt "go.etcd.io/bbolt"
@@ -18,6 +19,7 @@ import (
 	"github.com/redbluescreen/sbrwxmpp/certgen"
 	pconfig "github.com/redbluescreen/sbrwxmpp/config"
 	"github.com/redbluescreen/sbrwxmpp/db"
+	"github.com/redbluescreen/sbrwxmpp/log"
 	"github.com/redbluescreen/sbrwxmpp/tls"
 	"github.com/redbluescreen/sbrwxmpp/xmpp"
 )
@@ -30,31 +32,35 @@ addr = "localhost:5222"
 # Change domain to the public address of the server
 domain = "localhost"
 
+verbose = false
+
 [api]
 addr = "localhost:8087"
 key = "<<APIKEY>>"`
 
 func main() {
+	runtime.SetMutexProfileFraction(5)
+
 	config, err := pconfig.LoadConfig()
 	if err != nil {
 		if os.IsNotExist(err) {
-			log.Printf("No configuration found, generating")
+			stdlog.Printf("No configuration found, generating")
 			genConfig := strings.ReplaceAll(defaultConfig, "<<APIKEY>>", xmpp.RandomStringSecure(32))
 			err = ioutil.WriteFile("sbrwxmpp.toml", []byte(genConfig), os.ModePerm)
 			if err != nil {
-				log.Fatalf("Failed to save config: %v\n", err)
+				stdlog.Fatalf("Failed to save config: %v\n", err)
 			}
 			config, err = pconfig.LoadConfig()
 			if err != nil {
-				log.Fatalf("Failed to read config: %v\n", err)
+				stdlog.Fatalf("Failed to read config: %v\n", err)
 			}
 		} else {
-			log.Fatalf("Failed to read config: %v\n", err)
+			stdlog.Fatalf("Failed to read config: %v\n", err)
 		}
 	}
 
 	// TODO: logger init based on log config
-	logger := log.New(os.Stderr, "[server] ", log.LstdFlags)
+	logger := log.New("", config.Verbose)
 
 	ln, err := net.Listen("tcp", config.Addr)
 	if err != nil {
@@ -67,7 +73,7 @@ func main() {
 		config.CertKey = path.Join("sbrwxmpp-certs", config.Domain+".key")
 		if _, err := os.Stat(config.Cert); os.IsNotExist(err) {
 			logger.Printf("No certificate found for %v, generating new", config.Domain)
-			os.Mkdir("sbrwxmpp-certs", 0600)
+			_ = os.Mkdir("sbrwxmpp-certs", 0600)
 			err = certgen.GenerateCertificate("sbrwxmpp-certs", config.Domain)
 			if err != nil {
 				logger.Fatalf("Failed to generate certificate: %v\n", err)
@@ -106,7 +112,7 @@ func main() {
 		XMPP:   server,
 		DB:     db,
 		Config: config,
-		Logger: log.New(os.Stderr, "[api] ", log.LstdFlags),
+		Logger: stdlog.New(os.Stderr, "[api] ", stdlog.LstdFlags),
 	}
 	go apiSrv.Run()
 	logger.Print("Server running!")

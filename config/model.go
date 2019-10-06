@@ -9,6 +9,7 @@ type Config struct {
 	Cert    string
 	CertKey string
 	Domain  string
+	Verbose bool
 	API     APIConfig
 	Webhook WebhookConfig
 	Logging map[string]LoggingCategory
