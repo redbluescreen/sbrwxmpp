@@ -94,8 +94,10 @@ func (s *XmppServer) Run(ln net.Listener, tlsConfig *tls.Config) {
 				Client: &http.Client{Timeout: 1 * time.Second},
 				Config: &s.Config.Webhook,
 			},
+			writeChan: make(chan string, 5),
 		}
 		go cl.HandleConnection()
+		go cl.WriteRoutine()
 	}
 }
 

@@ -33,6 +33,13 @@ type XmppClient struct {
 	streamEnd     chan struct{}
 	streamClosed  uint32
 	webhook       *cmdhook.CmdHook
+	writeChan     chan string
+}
+
+func (c *XmppClient) WriteRoutine() {
+	for msg := range c.writeChan {
+		c.write(msg)
+	}
 }
 
 func (c *XmppClient) closeConn() {
@@ -44,13 +51,13 @@ func (c *XmppClient) closeConn() {
 }
 
 func (c *XmppClient) CloseError(err string) {
-	c.write("<stream:error>" + err + "</stream:error>")
+	c.Write("<stream:error>" + err + "</stream:error>")
 	c.Close()
 }
 
 func (c *XmppClient) Close() {
 	atomic.StoreUint32(&c.streamClosed, 1)
-	c.write("</stream:stream>")
+	c.Write("</stream:stream>")
 	select {
 	case <-c.streamEnd:
 	case <-time.After(1 * time.Second):
@@ -65,6 +72,7 @@ func (c *XmppClient) HandleConnection() {
 		}
 		c.server.RemoveClient(c)
 		c.closeConn()
+		close(c.writeChan)
 		c.logger.Println("Connection closed")
 	}()
 	stream, err := xmlstream.NewStream(c.tcpConn)
@@ -280,10 +288,10 @@ func (c *XmppClient) write(str string) {
 	c.logger.Debugf("SEND: %v\n", str)
 	var err error
 	if c.tlsConn != nil {
-		_ = c.tlsConn.SetWriteDeadline(time.Now().Add(1 * time.Second))
+		_ = c.tlsConn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 		_, err = c.tlsConn.Write([]byte(str))
 	} else {
-		_ = c.tcpConn.SetWriteDeadline(time.Now().Add(1 * time.Second))
+		_ = c.tcpConn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 		_, err = c.tcpConn.Write([]byte(str))
 	}
 	if err != nil {
@@ -331,10 +339,17 @@ func (c *XmppClient) sendPostTLSStreamFeatures() {
 	c.write(t)
 }
 
-func (c *XmppClient) Write(m string) {
-	c.write(m)
+func (c *XmppClient) Write(str string) {
+	if atomic.LoadUint32(&c.streamClosed) != 0 {
+		return
+	}
+	select {
+	case c.writeChan <- str:
+	default:
+		c.logger.Debug("Write dropped")
+	}
 }
 
 func (c *XmppClient) SendXML(e xmlstream.Element) {
-	c.write(e.AsString())
+	c.Write(e.AsString())
 }
